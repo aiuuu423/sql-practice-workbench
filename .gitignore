@@ -1,0 +1,18 @@
+.DS_Store
+
+# Local credentials and generated dependencies
+app/.env
+app/node_modules/
+app/dist/
+app/test-results/
+app/playwright-report/
+
+# Local learning data
+app/data/progress.json
+app/data/submissions.jsonl
+00_学习计划.md
+01_知识点笔记.md
+02_练习题库.md
+03_错题记录.md
+04_面试高频题.md
+05_业务分析案例.md
