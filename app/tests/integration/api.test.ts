@@ -115,6 +115,7 @@ describe("core API", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.verdict.passed).toBe(false);
+    expect(body.coachJob).toEqual({ id: "", status: "unavailable" });
     expect(JSON.stringify(body)).not.toContain("invite_code");
     expect(body).not.toHaveProperty("referenceSql");
   });

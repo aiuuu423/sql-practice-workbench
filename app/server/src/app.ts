@@ -4,6 +4,9 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { loadConfig, type AppConfig } from "./config";
 import { createMysqlRunner, type MysqlRunner } from "./mysql";
+import { createArkClient } from "./arkClient";
+import { createCoachService, type CoachService } from "./coachService";
+import { createCoachStore } from "./coachStore";
 import {
   createQuestionStore,
   type QuestionStore
@@ -14,6 +17,7 @@ import {
 } from "./progressStore";
 import { UnsafeSqlError } from "./sqlGuard";
 import { registerExecuteRoutes } from "./routes/execute";
+import { registerCoachRoutes } from "./routes/coach";
 import { registerHealthRoutes } from "./routes/health";
 import { registerQuestionRoutes } from "./routes/questions";
 import { registerResetRoutes } from "./routes/reset";
@@ -24,6 +28,7 @@ interface AppDependencies {
   runner?: MysqlRunner;
   questions?: QuestionStore;
   progress?: ProgressStore;
+  coach?: CoachService;
   serveStatic?: boolean;
 }
 
@@ -54,12 +59,39 @@ export async function createApp(dependencies: AppDependencies = {}) {
       },
       questions.listQuestions().map(({ id }) => id)
     ));
+  const coachStore = dependencies.coach
+    ? null
+    : await createCoachStore({
+        feedbackPath: `${dataDirectory}coach_feedback.jsonl`,
+        profilePath: `${dataDirectory}coach_profile.json`,
+        knowledgeNotesPath: `${learningRoot}01_知识点笔记.md`,
+        errorLogPath: `${learningRoot}03_错题记录.md`
+      });
+  const coach =
+    dependencies.coach ??
+    createCoachService({
+      configured: config.ark.configured,
+      client: config.ark.configured
+        ? createArkClient({
+            apiKey: config.ark.apiKey!,
+            model: config.ark.model!,
+            baseUrl: config.ark.baseUrl,
+            timeoutMs: config.ark.timeoutMs
+          })
+        : undefined,
+      store: coachStore!
+    });
   const app = Fastify({ logger: false });
 
   registerHealthRoutes(app, runner);
+  registerCoachRoutes(
+    app,
+    coach,
+    questions.listQuestions().map(({ id }) => id)
+  );
   registerQuestionRoutes(app, questions, progress);
   registerExecuteRoutes(app, runner);
-  registerSubmitRoutes(app, runner, questions, progress);
+  registerSubmitRoutes(app, runner, questions, progress, coach);
   registerResetRoutes(app, config, runner);
 
   if (dependencies.serveStatic) {
@@ -72,9 +104,17 @@ export async function createApp(dependencies: AppDependencies = {}) {
   }
 
   app.setErrorHandler((error, _request, reply) => {
+    const coachContext =
+      error && typeof error === "object"
+        ? {
+            ...("coachJob" in error ? { coachJob: error.coachJob } : {}),
+            ...("progress" in error ? { progress: error.progress } : {})
+          }
+        : {};
     if (error instanceof UnsafeSqlError) {
       return reply.code(400).send({
-        error: { code: error.code, message: error.message }
+        error: { code: error.code, message: error.message },
+        ...coachContext
       });
     }
 
@@ -85,7 +125,8 @@ export async function createApp(dependencies: AppDependencies = {}) {
         error: {
           code: mysqlError.code,
           message: mysqlError.message
-        }
+        },
+        ...coachContext
       });
     }
 
