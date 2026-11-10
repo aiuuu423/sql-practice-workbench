@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 const statePaths = [
   "../../data/progress.json",
   "../../data/submissions.jsonl",
+  "../../data/coach_feedback.jsonl",
+  "../../data/coach_profile.json",
   "../../../00_学习计划.md",
+  "../../../01_知识点笔记.md",
   "../../../02_练习题库.md",
   "../../../03_错题记录.md"
 ].map((path) => fileURLToPath(new URL(path, import.meta.url)));
@@ -83,6 +86,22 @@ test("completes the SQL practice workflow", async ({ page }) => {
   await expect
     .poll(() => page.locator(".result-pane").innerText(), { timeout: 10_000 })
     .toContain("结果不匹配");
+  await expect(page.getByText("AI 正在分析")).toBeVisible();
+  await expect(page.getByText("第 1 次筛选条件缺失")).toBeVisible({
+    timeout: 10_000
+  });
+  await expect(page.getByText("阶段总结")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "提交答案" }).click();
+  await expect(page.getByText("第 2 次筛选条件缺失")).toBeVisible({
+    timeout: 10_000
+  });
+  await page.getByRole("button", { name: "提交答案" }).click();
+  await expect(page.getByText("第 3 次筛选条件缺失")).toBeVisible({
+    timeout: 10_000
+  });
+  await expect(page.getByText("阶段总结")).toBeVisible();
+  await expect(page.getByText("需要继续巩固多条件筛选")).toBeVisible();
 
   await replaceEditor(page, correctD01);
   await page.getByRole("button", { name: "提交答案" }).click();
@@ -93,8 +112,11 @@ test("completes the SQL practice workflow", async ({ page }) => {
   });
 
   await replaceEditor(page, "DELETE FROM users");
-  await page.getByRole("button", { name: "运行 SQL" }).click();
+  await page.getByRole("button", { name: "提交答案" }).click();
   await expect(page.getByText(/DELETE is not allowed/i)).toBeVisible();
+  await expect(page.getByText(/第 1 次执行错误/)).toBeVisible({
+    timeout: 10_000
+  });
 
   await page.screenshot({
     path: "/tmp/sql-workbench-1440x900.png",

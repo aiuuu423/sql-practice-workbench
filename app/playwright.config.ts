@@ -15,9 +15,17 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: "npm run dev",
+    command:
+      "concurrently -k \"tsx tests/e2e/fakeArkServer.ts\" \"npm run dev\"",
     url: "http://127.0.0.1:5173",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
+    env: {
+      ...process.env,
+      ARK_API_KEY: "e2e-placeholder",
+      ARK_MODEL: "e2e-model",
+      ARK_BASE_URL: "http://127.0.0.1:3999/api/v3",
+      ARK_TIMEOUT_MS: "3000"
+    },
     timeout: 120_000
   }
 });
