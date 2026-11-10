@@ -1,16 +1,27 @@
 import { Check, Circle, History, Target } from "lucide-react";
 import type { ProgressData, PublicQuestion } from "../types";
+import type {
+  CoachFeedbackRecord,
+  CoachJobView
+} from "../types";
+import { AiCoachPane } from "./AiCoachPane";
 
 interface ProgressPaneProps {
   questions: PublicQuestion[];
   progress: ProgressData | null;
   selectedId: string;
+  coachConfigured: boolean | null;
+  coachJob: CoachJobView | null;
+  latestCoachFeedback: CoachFeedbackRecord | null;
 }
 
 export function ProgressPane({
   questions,
   progress,
-  selectedId
+  selectedId,
+  coachConfigured,
+  coachJob,
+  latestCoachFeedback
 }: ProgressPaneProps) {
   const completed = questions.filter(({ status }) => status === "passed").length;
   const current = progress?.questions[selectedId];
@@ -59,6 +70,12 @@ export function ProgressPane({
           </div>
         </dl>
       </section>
+
+      <AiCoachPane
+        configured={coachConfigured}
+        job={coachJob}
+        latestFeedback={latestCoachFeedback}
+      />
 
       <section className="inspector-section">
         <h2>

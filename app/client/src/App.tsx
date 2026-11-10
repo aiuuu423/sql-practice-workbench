@@ -15,8 +15,12 @@ import {
   TerminalSquare,
   X
 } from "lucide-react";
-import { api } from "./api";
+import { ApiClientError, api } from "./api";
 import type {
+  CoachEnqueueResult,
+  CoachFeedbackRecord,
+  CoachJob,
+  CoachJobView,
   HealthResponse,
   ProgressData,
   PublicQuestion,
@@ -66,15 +70,22 @@ export function App() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState("");
+  const [coachConfigured, setCoachConfigured] = useState<boolean | null>(null);
+  const [coachJobs, setCoachJobs] = useState<Record<string, CoachJobView>>({});
+  const [coachFeedback, setCoachFeedback] = useState<
+    Record<string, CoachFeedbackRecord>
+  >({});
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.health(), api.questions()])
-      .then(([nextHealth, questionResponse]) => {
+    Promise.all([api.health(), api.questions(), api.coachProfile()])
+      .then(([nextHealth, questionResponse, coachResponse]) => {
         if (cancelled) return;
         setHealth(nextHealth);
         setQuestions(questionResponse.questions);
         setProgress(questionResponse.progress);
+        setCoachConfigured(coachResponse.configured);
+        setCoachFeedback(coachResponse.latestFeedback);
         const nextQuestion =
           questionResponse.questions.find(
             (question) => !question.locked && question.status !== "passed"
@@ -111,6 +122,114 @@ export function App() {
     [selectedId]
   );
 
+  const applyProgress = useCallback((nextProgress: ProgressData) => {
+    setProgress(nextProgress);
+    setQuestions((current) =>
+      current.map((question) => ({
+        ...question,
+        status:
+          nextProgress.questions[question.id]?.status ?? question.status,
+        locked: question.prerequisites.some(
+          (id) => nextProgress.questions[id]?.status !== "passed"
+        )
+      }))
+    );
+  }, []);
+
+  const trackCoachJob = useCallback(
+    (questionId: string, coachJob: CoachEnqueueResult) => {
+      if (coachJob.status === "unavailable") {
+        setCoachJobs((current) => ({
+          ...current,
+          [questionId]: {
+            id: "",
+            questionId,
+            status: "unavailable",
+            feedback: null,
+            error: null
+          }
+        }));
+        return;
+      }
+      setCoachJobs((current) => ({
+        ...current,
+        [questionId]: {
+          id: coachJob.id,
+          questionId,
+          status: "queued",
+          feedback: null,
+          error: null
+        }
+      }));
+    },
+    []
+  );
+
+  const selectedCoachJob = coachJobs[selectedId] ?? null;
+
+  useEffect(() => {
+    if (
+      !selectedCoachJob ||
+      !selectedCoachJob.id ||
+      !["queued", "running"].includes(selectedCoachJob.status)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const jobId = selectedCoachJob.id;
+    const questionId = selectedId;
+
+    async function poll() {
+      try {
+        const response = await api.coachJob(jobId);
+        if (cancelled) return;
+        const job: CoachJob = response.job;
+        setCoachJobs((current) => ({ ...current, [questionId]: job }));
+        if (job.status === "completed" && job.feedback) {
+          setCoachFeedback((current) => ({
+            ...current,
+            [questionId]: {
+              timestamp: job.updatedAt,
+              questionId,
+              verdict: "failed",
+              feedback: job.feedback!,
+              providerCategory: null
+            }
+          }));
+          return;
+        }
+        if (job.status === "failed") return;
+        attempts += 1;
+        if (attempts < 45) {
+          timer = setTimeout(poll, 1000);
+        }
+      } catch {
+        if (cancelled) return;
+        setCoachJobs((current) => ({
+          ...current,
+          [questionId]: {
+            id: jobId,
+            questionId,
+            status: "failed",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            feedback: null,
+            error: "AI 分析暂不可用，下次提交将自动重试。"
+          }
+        }));
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [selectedId, selectedCoachJob?.id]);
+
   const runSql = useCallback(async () => {
     if (!sql.trim()) return;
     setResultState({ kind: "running", action: "run" });
@@ -123,34 +242,38 @@ export function App() {
   }, [sql]);
 
   const applySubmission = useCallback((response: SubmitResponse) => {
-    setProgress(response.progress);
-    setQuestions((current) =>
-      current.map((question) => ({
-        ...question,
-        status:
-          response.progress.questions[question.id]?.status ?? question.status,
-        locked: question.prerequisites.some(
-          (id) => response.progress.questions[id]?.status !== "passed"
-        )
-      }))
-    );
+    applyProgress(response.progress);
     setResultState({
       kind: "verdict",
       result: response.result,
       verdict: response.verdict,
       syncWarning: response.syncWarning
     });
-  }, []);
+  }, [applyProgress]);
 
   const submitSql = useCallback(async () => {
     if (!selectedQuestion || !sql.trim()) return;
     setResultState({ kind: "running", action: "submit" });
     try {
-      applySubmission(await api.submit(selectedQuestion.id, sql));
+      const response = await api.submit(selectedQuestion.id, sql);
+      applySubmission(response);
+      trackCoachJob(selectedQuestion.id, response.coachJob);
     } catch (error) {
       setResultState({ kind: "error", message: (error as Error).message });
+      if (error instanceof ApiClientError) {
+        if (error.progress) applyProgress(error.progress);
+        if (error.coachJob) {
+          trackCoachJob(selectedQuestion.id, error.coachJob);
+        }
+      }
     }
-  }, [applySubmission, selectedQuestion, sql]);
+  }, [
+    applyProgress,
+    applySubmission,
+    selectedQuestion,
+    sql,
+    trackCoachJob
+  ]);
 
   async function resetDatabase() {
     setResetting(true);
@@ -280,6 +403,9 @@ export function App() {
             questions={questions}
             progress={progress}
             selectedId={selectedId}
+            coachConfigured={coachConfigured}
+            coachJob={selectedCoachJob}
+            latestCoachFeedback={coachFeedback[selectedId] ?? null}
           />
         </aside>
         {inspectorOpen ? (
