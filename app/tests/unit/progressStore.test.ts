@@ -74,6 +74,53 @@ describe("progress store", () => {
     ).toBe(2);
   });
 
+  test("migrates old progress and counts failed and error attempts", async () => {
+    await writeFile(
+      paths.progressPath,
+      JSON.stringify({
+        version: 1,
+        updatedAt: "2026-11-09T00:00:00.000Z",
+        questions: {
+          D01: {
+            status: "available",
+            attempts: 0,
+            passedAt: null,
+            latestVerdict: null,
+            recurringErrors: {}
+          }
+        }
+      })
+    );
+    const store = await createProgressStore(paths, ["D01"]);
+
+    expect((await store.getProgress()).questions.D01).toMatchObject({
+      failedAttempts: 0,
+      errorAttempts: 0
+    });
+
+    await store.recordSubmission({
+      timestamp: "2026-11-10T00:00:00.000Z",
+      questionId: "D01",
+      sql: "SELECT 1",
+      verdict: "failed",
+      durationMs: 1,
+      errorCategory: "result_mismatch"
+    });
+    await store.recordSubmission({
+      timestamp: "2026-11-10T00:01:00.000Z",
+      questionId: "D01",
+      sql: "SELECT missing FROM users",
+      verdict: "error",
+      durationMs: 1,
+      errorCategory: "unknown_column"
+    });
+
+    expect((await store.getProgress()).questions.D01).toMatchObject({
+      failedAttempts: 1,
+      errorAttempts: 1
+    });
+  });
+
   test("replaces only generated Markdown marker contents", async () => {
     const store = await createProgressStore(paths, ["D01"]);
     await store.recordSubmission({

@@ -11,6 +11,8 @@ app/playwright-report/
 # Local learning data
 app/data/progress.json
 app/data/submissions.jsonl
+app/data/coach_feedback.jsonl
+app/data/coach_profile.json
 00_学习计划.md
 01_知识点笔记.md
 02_练习题库.md

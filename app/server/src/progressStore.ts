@@ -33,6 +33,8 @@ function createInitialProgress(questionIds: string[]): ProgressData {
         {
           status: "available" as const,
           attempts: 0,
+          failedAttempts: 0,
+          errorAttempts: 0,
           passedAt: null,
           latestVerdict: null,
           recurringErrors: {}
@@ -179,6 +181,12 @@ export async function createProgressStore(
 
       question.attempts += 1;
       question.latestVerdict = submission.verdict;
+      if (submission.verdict === "failed") {
+        question.failedAttempts += 1;
+      }
+      if (submission.verdict === "error") {
+        question.errorAttempts += 1;
+      }
       if (submission.verdict === "passed") {
         question.status = "passed";
         question.passedAt ??= submission.timestamp;

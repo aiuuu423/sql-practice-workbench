@@ -66,6 +66,8 @@ export const JudgeVerdictSchema = z.object({
 export const QuestionProgressSchema = z.object({
   status: z.enum(["available", "passed"]).default("available"),
   attempts: z.number().int().nonnegative().default(0),
+  failedAttempts: z.number().int().nonnegative().default(0),
+  errorAttempts: z.number().int().nonnegative().default(0),
   passedAt: z.string().nullable().default(null),
   latestVerdict: z.enum(["passed", "failed", "error"]).nullable().default(null),
   recurringErrors: z.record(z.string(), z.number().int().nonnegative()).default({})
@@ -94,6 +96,48 @@ export const ApiErrorSchema = z.object({
   })
 });
 
+export const CoachFeedbackSchema = z.object({
+  diagnosis: z.string().min(1).max(800),
+  explanation: z.string().min(1).max(1600),
+  nextHint: z.string().min(1).max(800),
+  reviewTopics: z.array(z.string().min(1).max(80)).max(8),
+  mistakeTags: z.array(z.string().min(1).max(80)).max(8),
+  stageSummary: z.string().min(1).max(1600).nullable()
+});
+
+export const CoachJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "failed"
+]);
+
+export const CoachJobSchema = z.object({
+  id: z.string().uuid(),
+  questionId: z.string(),
+  status: CoachJobStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  feedback: CoachFeedbackSchema.nullable(),
+  error: z.string().nullable(),
+  syncWarning: z.string().optional()
+});
+
+export const CoachProfileSchema = z.object({
+  version: z.literal(1),
+  updatedAt: z.string(),
+  weakPoints: z.record(
+    z.string(),
+    z.object({
+      count: z.number().int().nonnegative(),
+      lastSeenAt: z.string()
+    })
+  ),
+  reviewTopics: z.record(z.string(), z.number().int().nonnegative()),
+  questionSummaries: z.record(z.string(), z.string()),
+  latestSummary: z.string().nullable()
+});
+
 export type Question = z.infer<typeof QuestionSchema>;
 export type PublicQuestion = z.infer<typeof PublicQuestionSchema>;
 export type ExecuteRequest = z.infer<typeof ExecuteRequestSchema>;
@@ -105,3 +149,7 @@ export type QuestionProgress = z.infer<typeof QuestionProgressSchema>;
 export type ProgressData = z.infer<typeof ProgressDataSchema>;
 export type SubmissionRecord = z.infer<typeof SubmissionRecordSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+export type CoachFeedback = z.infer<typeof CoachFeedbackSchema>;
+export type CoachJobStatus = z.infer<typeof CoachJobStatusSchema>;
+export type CoachJob = z.infer<typeof CoachJobSchema>;
+export type CoachProfile = z.infer<typeof CoachProfileSchema>;
